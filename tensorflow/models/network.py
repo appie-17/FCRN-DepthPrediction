@@ -124,7 +124,7 @@ class Network(object):
 
     def make_var(self, name, shape):
         '''Creates a new TensorFlow variable.'''
-        return tf.get_variable(name, shape, dtype = 'float32', trainable=self.trainable)
+        return tf.get_variable(name, shape, dtype = 'float32', trainable=self.trainable, initializer=tf.initializers.random_normal(mean=0.0, stddev=0.01))
 
     def validate_padding(self, padding):
         '''Verifies that the padding is one of the supported ones.'''
@@ -252,7 +252,21 @@ class Network(object):
             else:
                 raise ValueError('Rank 2 tensor input expected for softmax!')
         return tf.nn.softmax(input_data, name)
+    
+    def bn_train(self, input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name):
+        batch_mean, batch_var = tf.nn.moments(input_data, [0, 1, 2])
 
+        train_mean = tf.assign(pop_mean,
+                               pop_mean * decay + batch_mean * (1 - decay))
+        train_var = tf.assign(pop_var,
+                              pop_var * decay + batch_var * (1 - decay))
+        with tf.control_dependencies([train_mean, train_var]):
+            return tf.nn.batch_normalization(input_data,
+                    batch_mean, batch_var, offset, scale, epsilon, name = name)
+    def bn_test(self, input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name):
+        return tf.nn.batch_normalization(input_data,
+                pop_mean, pop_var, offset, scale, epsilon, name = name)
+                
     @layer
     def batch_normalization(self, input_data, name, scale_offset=True, relu=False):
 
@@ -267,19 +281,9 @@ class Network(object):
                 offset = tf.get_variable("offset", shape, initializer = tf.constant_initializer(0.0))
             else:
                 scale, offset = (None, None)
-            if self.is_training:
-                batch_mean, batch_var = tf.nn.moments(input_data, [0, 1, 2])
-
-                train_mean = tf.assign(pop_mean,
-                               pop_mean * decay + batch_mean * (1 - decay))
-                train_var = tf.assign(pop_var,
-                              pop_var * decay + batch_var * (1 - decay))
-                with tf.control_dependencies([train_mean, train_var]):
-                    output = tf.nn.batch_normalization(input_data,
-                    batch_mean, batch_var, offset, scale, epsilon, name = name)
-            else:
-                output = tf.nn.batch_normalization(input_data,
-                pop_mean, pop_var, offset, scale, epsilon, name = name)
+                
+            output = tf.cond(self.is_training, 
+            						lambda: self.bn_train(input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name), 										lambda: self.bn_test(input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name))
 
             if relu:
                 output = tf.nn.relu(output)
@@ -288,7 +292,7 @@ class Network(object):
 
     @layer
     def dropout(self, input_data, keep_prob, name):
-        return tf.nn.dropout(input_data, keep_prob, name=name)
+        return tf.Print(tf.nn.dropout(input_data, keep_prob, name=name),[keep_prob], "Dropout: ")
     
 
     def unpool_as_conv(self, size, input_data, id, stride = 1, ReLU = False, BN = True):
