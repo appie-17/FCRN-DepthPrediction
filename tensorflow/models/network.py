@@ -124,7 +124,7 @@ class Network(object):
 
     def make_var(self, name, shape):
         '''Creates a new TensorFlow variable.'''
-        return tf.get_variable(name, shape, dtype = 'float32', trainable=self.trainable, initializer=tf.initializers.random_normal(mean=0.0, stddev=0.01))
+        return tf.get_variable(name, shape, dtype = 'float32', trainable=self.trainable, initializer=tf.initializers.random_normal(mean=0.0, stddev=0.01), regularizer=tf.contrib.layers.l2_regularizer(0.0005) )
 
     def validate_padding(self, padding):
         '''Verifies that the padding is one of the supported ones.'''
@@ -277,13 +277,14 @@ class Network(object):
             epsilon = 1e-4
             decay = 0.999
             if scale_offset:
-                scale = tf.get_variable("scale", shape, initializer = tf.constant_initializer(1.0))
-                offset = tf.get_variable("offset", shape, initializer = tf.constant_initializer(0.0))
+                scale = tf.get_variable("scale", shape, initializer = tf.constant_initializer(1.0), regularizer=tf.contrib.layers.l2_regularizer(0.0005)) #, trainable=False)
+                offset = tf.get_variable("offset", shape, initializer = tf.constant_initializer(0.0), regularizer=tf.contrib.layers.l2_regularizer(0.0005)) #, trainable=False)
             else:
                 scale, offset = (None, None)
                 
             output = tf.cond(self.is_training, 
-            						lambda: self.bn_train(input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name), 										lambda: self.bn_test(input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name))
+            						lambda: self.bn_train(input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name), 
+									lambda: self.bn_test(input_data, pop_mean, pop_var, decay, offset, scale, epsilon, name))
 
             if relu:
                 output = tf.nn.relu(output)
